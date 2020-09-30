@@ -5,14 +5,15 @@ import os
 import time
 import torch
 import numpy
+import pickle
 from pit_criterion import cal_loss
 from utils import device
 
 class Solver(object):
 
-    def __init__(self, data, model, optimizer, args):
-        self.tr_loader = data['tr_loader']
-        self.cv_loader = data['cv_loader']
+    def __init__(self, model, optimizer, args):
+        #self.tr_loader = data['tr_loader']
+        #self.cv_loader = data['cv_loader']
         self.model = model
         self.optimizer = optimizer
 
@@ -40,7 +41,7 @@ class Solver(object):
         if self.continue_from:
             print('Loading checkpoint model %s' % self.continue_from)
             self.model.load_state_dict(torch.load(self.continue_from, map_location='cpu'))
-            self.start_epoch = 0
+            self.start_epoch = int(self.continue_from[9:11:])
         else:
             self.start_epoch = 0
         # Create save folder
@@ -123,9 +124,61 @@ class Solver(object):
     def _run_one_epoch(self, epoch, cross_valid=False):
         start = time.time()
         total_loss = 0
+        #data_loader = self.tr_loader if not cross_valid else self.cv_loader
+        #print('data_loader.len {}'.format(len(data_loader)))
+        permutation = numpy.random.permutation(1197) if not cross_valid else numpy.random.permutation(167)
+        for i, idx in enumerate(permutation):
+            if cross_valid:
+                with open(f"../../../../home/u5550322/cv_json/cv_{idx}.pkl", "rb") as f: 
+                    data_dict = pickle.load(f)
+            else:
+                with open(f"../../../../home/u5550322/tr_json/tr_{idx}.pkl", "rb") as f: 
+                    data_dict = pickle.load(f)
+            padded_mixture_ = torch.Tensor(data_dict['padded_mixture'])
+            mixture_lengths_ = torch.Tensor(data_dict['mixture_lengths']).long()
+            #print(mixture_lengths_[0,:,:])
+            padded_source_ = torch.Tensor(data_dict['padded_source'])
+            seg_idx = numpy.random.randint(0, padded_mixture_.shape[0], self.batch_size)
+            padded_mixture = padded_mixture_[seg_idx, :]
+            mixture_lengths = mixture_lengths_[seg_idx]
+            padded_source = padded_source_[seg_idx, :]
+            # print('seg_idx {}'.format(seg_idx))
+            # print('padded_mixture_ {}'.format(padded_mixture_))
+            # print('padded_source_ {}'.format(padded_source_))
+            # print('padded_mixture {}'.format(padded_mixture))
+            # print('padded_source {}'.format(padded_source))
+            # print('mixture_lengths {}'.format(mixture_lengths))
+            # print('padded_mixture.shape {}'.format(padded_mixture.shape))
+            if self.use_cuda:
+                # padded_mixture = padded_mixture.cuda()
+                # mixture_lengths = mixture_lengths.cuda()
+                # padded_source = padded_source.cuda()
+                padded_mixture = padded_mixture.to(device)
+                mixture_lengths = mixture_lengths.to(device)
+                padded_source = padded_source.to(device)
+            #print('padded_mixture.shape {}'.format(padded_mixture.shape))
+            estimate_source = self.model(padded_mixture)
+            #print('estimate_source.shape {}'.format(estimate_source.shape))
+            loss, max_snr, estimate_source, reorder_estimate_source = \
+                cal_loss(padded_source, estimate_source, mixture_lengths)
+            if not cross_valid:
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(),
+                                               self.max_norm)
+                self.optimizer.step()
 
-        data_loader = self.tr_loader if not cross_valid else self.cv_loader
-        print('data_loader.len {}'.format(len(data_loader)))
+            total_loss += loss.item()
+
+            if i % self.print_freq == 0:
+                print('Epoch {0} | Iter {1} | Average Loss {2:.3f} | '
+                      'Current Loss {3:.6f} | {4:.1f} ms/batch'.format(
+                    epoch + 1, i + 1, total_loss / (i + 1),
+                    loss.item(), 1000 * (time.time() - start) / (i + 1)),
+                    flush=True)
+
+        return total_loss / (i + 1)
+        '''
         for i, (data) in enumerate(data_loader):
             padded_mixture_, mixture_lengths_, padded_source_ = data
             seg_idx = numpy.random.randint(0, padded_mixture_.shape[0], self.batch_size)
@@ -168,3 +221,4 @@ class Solver(object):
                     flush=True)
 
         return total_loss / (i + 1)
+        '''

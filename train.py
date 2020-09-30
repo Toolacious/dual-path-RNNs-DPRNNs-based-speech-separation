@@ -97,10 +97,10 @@ def main(args):
     cv_dataset = AudioDataset(args.valid_dir, batch_size=1,  # 1 -> use less GPU memory to do cv
                               sample_rate=args.sample_rate,
                               segment=-1, cv_maxlen=args.cv_maxlen)  # -1 -> use full audio
-    tr_loader = AudioDataLoader(tr_dataset, batch_size=1,
-                                shuffle=args.shuffle)
-    cv_loader = AudioDataLoader(cv_dataset, batch_size=1)
-    data = {'tr_loader': tr_loader, 'cv_loader': cv_loader}
+   # tr_loader = AudioDataLoader(tr_dataset, batch_size=1,
+    #                            shuffle=args.shuffle)
+   # cv_loader = AudioDataLoader(cv_dataset, batch_size=1)
+   # data = {'tr_loader': tr_loader, 'cv_loader': cv_loader}
 
     # model
     # model = FURCA(args.W, args.N, args.K, args.C, args.D, args.H, args.E,
@@ -128,7 +128,8 @@ def main(args):
         return
 
     # solver
-    solver = Solver(data, model, optimizier, args)
+    solver = Solver(model, optimizier, args)
+#    solver = Solver(data, model, optimizier, args)
     solver.train()
 
 
